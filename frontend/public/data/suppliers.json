@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Chennai Textiles Co.",
+    "location": "Chennai, India",
+    "lat": 13.0827,
+    "lng": 80.2707,
+    "risk": "HIGH",
+    "reason": "Tropical storm approaching - Expected port closure in 48 hours"
+  },
+  {
+    "name": "Rotterdam Port Services",
+    "location": "Rotterdam, Netherlands",
+    "lat": 51.9225,
+    "lng": 4.47917,
+    "risk": "LOW",
+    "reason": "Clear weather conditions, normal operations"
+  },
+  {
+    "name": "Shanghai Manufacturing",
+    "location": "Shanghai, China",
+    "lat": 31.2304,
+    "lng": 121.4737,
+    "risk": "MEDIUM",
+    "reason": "Port congestion reported - Delays of 2-3 days expected"
+  },
+  {
+    "name": "Los Angeles Distribution",
+    "location": "Los Angeles, USA",
+    "lat": 34.0522,
+    "lng": -118.2437,
+    "risk": "LOW",
+    "reason": "Operations normal, no disruptions detected"
+  },
+  {
+    "name": "Singapore Logistics Hub",
+    "location": "Singapore",
+    "lat": 1.3521,
+    "lng": 103.8198,
+    "risk": "HIGH",
+    "reason": "Port strike announced - Major delays expected for 5 days"
+  },
+  {
+    "name": "Hamburg Port Authority",
+    "location": "Hamburg, Germany",
+    "lat": 53.5511,
+    "lng": 9.9937,
+    "risk": "LOW",
+    "reason": "Stable operations, optimal shipping conditions"
+  },
+  {
+    "name": "Dubai Trade Center",
+    "location": "Dubai, UAE",
+    "lat": 25.2048,
+    "lng": 55.2708,
+    "risk": "MEDIUM",
+    "reason": "Customs processing delays due to increased security checks"
+  },
+  {
+    "name": "Tokyo Supply Chain",
+    "location": "Tokyo, Japan",
+    "lat": 35.6762,
+    "lng": 139.6503,
+    "risk": "LOW",
+    "reason": "All systems operational, excellent track record"
+  },
+  {
+    "name": "Mumbai Port Trust",
+    "location": "Mumbai, India",
+    "lat": 19.0760,
+    "lng": 72.8777,
+    "risk": "MEDIUM",
+    "reason": "Heavy monsoon rains affecting loading operations"
+  },
+  {
+    "name": "Sydney Freight Services",
+    "location": "Sydney, Australia",
+    "lat": -33.8688,
+    "lng": 151.2093,
+    "risk": "LOW",
+    "reason": "Normal operations, no weather concerns"
+  }
+]

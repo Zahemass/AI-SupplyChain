@@ -1,0 +1,62 @@
+[
+  {
+    "location": "Chennai, India",
+    "condition": "Tropical Storm Warning",
+    "severity": "HIGH",
+    "icon": "🌪️",
+    "description": "Severe tropical storm approaching. Expected landfall in 48 hours. Port closure likely.",
+    "temperature": "28°C",
+    "windSpeed": "85 km/h",
+    "impact": "Major disruption to shipping operations expected"
+  },
+  {
+    "location": "Rotterdam, Netherlands",
+    "condition": "Clear",
+    "severity": "LOW",
+    "icon": "☀️",
+    "description": "Clear skies and calm seas. Optimal conditions for shipping operations.",
+    "temperature": "15°C",
+    "windSpeed": "12 km/h",
+    "impact": "No impact on operations"
+  },
+  {
+    "location": "Singapore",
+    "condition": "Partly Cloudy",
+    "severity": "LOW",
+    "icon": "⛅",
+    "description": "Partly cloudy with light winds. Normal shipping conditions.",
+    "temperature": "31°C",
+    "windSpeed": "18 km/h",
+    "impact": "Minimal impact on operations"
+  },
+  {
+    "location": "Mumbai, India",
+    "condition": "Heavy Rain",
+    "severity": "MEDIUM",
+    "icon": "🌧️",
+    "description": "Monsoon season bringing heavy rainfall. Loading operations may be delayed.",
+    "temperature": "26°C",
+    "windSpeed": "32 km/h",
+    "impact": "Moderate delays in port operations"
+  },
+  {
+    "location": "Los Angeles, USA",
+    "condition": "Sunny",
+    "severity": "LOW",
+    "icon": "☀️",
+    "description": "Clear sunny weather. Excellent conditions for all logistics operations.",
+    "temperature": "22°C",
+    "windSpeed": "15 km/h",
+    "impact": "No weather-related disruptions"
+  },
+  {
+    "location": "Shanghai, China",
+    "condition": "Fog Advisory",
+    "severity": "MEDIUM",
+    "icon": "🌫️",
+    "description": "Dense fog reducing visibility. May cause minor delays in port operations.",
+    "temperature": "18°C",
+    "windSpeed": "8 km/h",
+    "impact": "Minor delays possible due to reduced visibility"
+  }
+]

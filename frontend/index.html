@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="AI-powered supply chain risk monitoring and predictive analytics dashboard" />
+    <meta name="keywords" content="supply chain, risk management, AI, logistics, predictive analytics" />
+    <meta name="author" content="Supply Chain Risk Radar Team" />
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="AI Supply Chain Risk Radar" />
+    <meta property="og:description" content="Real-time supply chain risk monitoring with AI-powered predictions" />
+    <meta property="og:type" content="website" />
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <title>AI Supply Chain Risk Radar</title>
+    
+    <style>
+      /* Loading screen styles */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease;
+      }
+      
+      #loading-screen.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      
+      .loader {
+        width: 60px;
+        height: 60px;
+        border: 4px solid rgba(6, 182, 212, 0.2);
+        border-top-color: #06b6d4;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      .loading-text {
+        margin-top: 20px;
+        color: #06b6d4;
+        font-family: 'Inter', sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 1px;
+      }
+      
+      .loading-subtitle {
+        margin-top: 10px;
+        color: #94a3b8;
+        font-family: 'Inter', sans-serif;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+      <div class="loader"></div>
+      <div class="loading-text">SUPPLY CHAIN RISK RADAR</div>
+      <div class="loading-subtitle">Initializing AI systems...</div>
+    </div>
+    
+    <!-- React Root -->
+    <div id="root"></div>
+    
+    <script type="module" src="/src/main.jsx"></script>
+    
+    <script>
+      // Hide loading screen when React app is ready
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const loadingScreen = document.getElementById('loading-screen');
+          if (loadingScreen) {
+            loadingScreen.classList.add('hidden');
+            setTimeout(() => {
+              loadingScreen.style.display = 'none';
+            }, 500);
+          }
+        }, 1000);
+      });
+    </script>
+  </body>
+</html>
