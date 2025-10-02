@@ -1,0 +1,4 @@
+[
+  { "date": "2025-10-01", "location": "Mumbai, India", "event_type": "heavy rain", "severity": "high" },
+  { "date": "2025-10-01", "location": "Shanghai, China", "event_type": "fog", "severity": "medium" }
+]
