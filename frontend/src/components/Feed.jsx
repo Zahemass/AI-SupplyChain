@@ -6,16 +6,23 @@ export default function Feed() {
   const [filter, setFilter] = useState('all'); // all, high, medium, low
 
   useEffect(() => {
-    fetch("/data/news_feed.json")
-      .then((res) => res.json())
-      .then((data) => {
+    let interval;
+    async function loadNews() {
+      try {
+        const res = await fetch("/api/news"); // ✅ now from backend
+        const data = await res.json();
         setNewsFeed(data);
+      } catch (err) {
+        console.error("News API fetch error:", err);
+      } finally {
         setLoading(false);
-      })
-      .catch(err => {
-        console.log(err);
-        setLoading(false);
-      });
+      }
+    }
+
+    loadNews(); // initial load
+    interval = setInterval(loadNews, 30000); // 🔄 auto-refresh every 30s
+
+    return () => clearInterval(interval);
   }, []);
 
   const getRiskLevel = (title) => {
@@ -38,7 +45,7 @@ export default function Feed() {
 
   const filteredNews = filter === 'all' 
     ? newsFeed 
-    : newsFeed.filter(n => getRiskLevel(n.title) === filter.toUpperCase());
+    : newsFeed.filter(n => getRiskLevel(n.title || n.headline) === filter.toUpperCase());
 
   if (loading) {
     return (
@@ -103,7 +110,7 @@ export default function Feed() {
         paddingRight: '5px'
       }}>
         {filteredNews.map((news, idx) => {
-          const riskLevel = getRiskLevel(news.title);
+          const riskLevel = getRiskLevel(news.title || news.headline);
           return (
             <div 
               key={idx}
@@ -121,7 +128,7 @@ export default function Feed() {
                 alignItems: 'flex-start',
                 marginBottom: '8px'
               }}>
-                <b style={{ flex: 1 }}>{news.title}</b>
+                <b style={{ flex: 1 }}>{news.title || news.headline}</b>
                 <span 
                   className={`risk-badge ${riskLevel.toLowerCase()}`}
                   style={{ marginLeft: '10px' }}
@@ -130,7 +137,7 @@ export default function Feed() {
                 </span>
               </div>
               
-              <p style={{ margin: '8px 0' }}>{news.summary}</p>
+              <p style={{ margin: '8px 0' }}>{news.summary || news.description}</p>
               
               <div style={{
                 display: 'flex',
@@ -141,13 +148,13 @@ export default function Feed() {
                 <span className="feed-timestamp">
                   🕒 {getTimeAgo(idx)}
                 </span>
-                {news.source && (
+                {news.source?.name && (
                   <span style={{ 
                     fontSize: '11px', 
                     color: '#06b6d4',
                     fontWeight: '500'
                   }}>
-                    {news.source}
+                    {news.source.name}
                   </span>
                 )}
               </div>

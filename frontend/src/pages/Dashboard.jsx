@@ -2,7 +2,7 @@ import RiskMap from "../components/RiskMap";
 import RiskPanel from "../components/RiskPanel";
 import Feed from "../components/Feed";
 
-export default function Dashboard() {
+export default function Dashboard({ suppliers = [], risks = [], news = [], loading }) {
   return (
     <div>
       <div style={{
@@ -30,12 +30,13 @@ export default function Dashboard() {
 
       <div className="dashboard">
         <div className="dashboard-left">
-          <RiskMap />
-          <Feed />
+          {/* ✅ Pass props instead of fetching inside */}
+          <RiskMap suppliers={suppliers} risks={risks} loading={loading} />
+          <Feed news={news} loading={loading} />
         </div>
         
         <div className="dashboard-right">
-          <RiskPanel />
+          <RiskPanel suppliers={suppliers} risks={risks} loading={loading} />
           
           {/* Weather Widget */}
           <div className="card" style={{ animationDelay: '0.2s' }}>
