@@ -22,7 +22,7 @@ export const getRisk = async (req, res) => {
       }
 
       // Must have sufficient relevance score
-      if (typeof n.relevance_score === "number" && n.relevance_score < 0.1) {
+      if (typeof n.relevance_score === "number" && n.relevance_score < 0.5) {
         console.log(`🗑️ Dropping: Low relevance (${n.relevance_score}) - "${n.headline}"`);
         return false;
       }

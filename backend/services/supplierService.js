@@ -1,4 +1,3 @@
-// backend/services/supplierService.js
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -58,8 +57,15 @@ export const getSuppliers = async (risks = []) => {
       
       // ✅ Real-time risk status
       current_risk_level: highestRisk?.risk_level || "LOW",
-      risk_score: highestRisk?.risk_score || 0,
-      active_risks: matched.map(r => ({
+      risk_score: highestRisk 
+        ? (highestRisk.risk_score > 1 
+            ? highestRisk.risk_score 
+            : Math.round(highestRisk.risk_score * 100)) 
+        : 0,
+
+      // ✅ Active risk links
+      active_risk_ids: matched.map(r => r.id),   // 👈 NEW: only IDs
+      active_risks: matched.map(r => ({          // 👈 Still keep details
         id: r.id,
         name: r.name,
         summary: r.summary,

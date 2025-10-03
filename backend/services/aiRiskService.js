@@ -1,7 +1,7 @@
 // backend/services/aiRiskService.js
 import { analyzeWithCerebras } from "./cerebrasClient.js";
 import { translateToEnglish } from "./translatorService.js";
-import { geocodeLocation } from "./geoService.js";
+import { geocodeLocationWithCache } from "./geoService.js";
 import { getSuppliers as loadBaseSuppliers } from "../services/supplierService.js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -33,7 +33,7 @@ function matchSuppliers(location, suppliers) {
  * Calculate financial impact based on risk score and affected suppliers
  */
 function estimateFinancialImpact(riskScore, affectedSuppliers) {
-  const baseImpact = riskScore * 200000; // Base: $0-$200k
+  const baseImpact = riskScore * 500000; // Base: $0-$200k
   const supplierMultiplier = affectedSuppliers.length > 0 ? affectedSuppliers.length : 1;
   
   const min = Math.round(baseImpact * 0.5 * supplierMultiplier);
@@ -85,8 +85,6 @@ function generateAffectedRoutes(location, affectedSuppliers, suppliers) {
 export async function analyzeEventsBatch(events) {
   console.log("⚡ analyzeEventsBatch called with", events.length, "events");
 
-  // ✅ CRITICAL FIX: Don't call getSuppliers here (causes infinite loop)
-  // We'll receive suppliers as parameter or load them differently
   let suppliers = [];
   try {
     const { loadSuppliers } = await import('./supplierService.js');
@@ -95,7 +93,6 @@ export async function analyzeEventsBatch(events) {
     console.warn("⚠️ Could not load suppliers directly:", err.message);
   }
 
-  // Filter out irrelevant events before processing
   const relevantEvents = events.filter(e => {
     if (!e.headline || !e.location) return false;
     if (e.location === "Global") return false;
@@ -109,7 +106,29 @@ export async function analyzeEventsBatch(events) {
     return [];
   }
 
-  const translatedEvents = relevantEvents.map(e => ({
+  // ✅ CRITICAL FIX: Process in smaller batches of 10
+  const BATCH_SIZE = 10;
+  const allResults = [];
+
+  for (let i = 0; i < relevantEvents.length; i += BATCH_SIZE) {
+    const batch = relevantEvents.slice(i, i + BATCH_SIZE);
+    console.log(`🔄 Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(relevantEvents.length/BATCH_SIZE)}`);
+    
+    const batchResults = await processBatch(batch, suppliers);
+    allResults.push(...batchResults);
+    
+    // Add small delay between batches to be nice to APIs
+    if (i + BATCH_SIZE < relevantEvents.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  return allResults;
+}
+
+// Helper function to process a single batch
+async function processBatch(batch, suppliers) {
+  const translatedEvents = batch.map(e => ({
     ...e,
     headline: translateToEnglish ? translateToEnglish(e.headline, e.lang || "en") : e.headline
   }));
@@ -127,131 +146,137 @@ Return JSON array with this EXACT structure (no additional text):
     "risk_score": 0.75,
     "risk_level": "HIGH",
     "confidence": 0.85,
-    "summary": "Brief impact explanation (max 100 chars)",
-    "mitigation": "Specific action recommendation",
+    "summary": "One-sentence business impact (max 120 chars)",
+    "mitigation": "Specific business action",
     "source": "news source name"
   }
 ]
 
+
 Rules:
+- summary: Must be one sentence (≤120 chars) describing supply chain business impact.  
+  Example: "Flooding in Chennai halts textile exports, delaying shipments 5 days."
+- mitigation: Must be a clear, actionable business recommendation.  
+  Example: "Divert cargo to Tuticorin port and activate backup supplier in Bangalore."
 - risk_score: 0.0-1.0 (0.0-0.3=LOW, 0.4-0.6=MEDIUM, 0.7-1.0=HIGH)
 - risk_level: Must be "LOW", "MEDIUM", or "HIGH"
 - confidence: 0.0-1.0 (how certain you are)
-- Return array with ${relevantEvents.length} objects
+- Return array with ${batch.length} objects
 - NO text outside JSON`;
 
   try {
     const rawOutput = await analyzeWithCerebras(prompt);
-    console.log("🧠 Raw Cerebras output:", rawOutput.substring(0, 500));
+    console.log("🧠 Full Cerebras output:", rawOutput);
+
 
     let parsed = [];
-    try {
-      parsed = JSON.parse(rawOutput);
-      if (!Array.isArray(parsed)) {
-        parsed = [parsed];
+
+try {
+  // Try parsing the whole response
+  parsed = JSON.parse(rawOutput);
+  if (!Array.isArray(parsed)) parsed = [parsed];
+} catch {
+  console.warn("⚠️ Whole JSON parse failed, attempting partial recovery...");
+
+  // Try to recover individual JSON objects
+  const matches = rawOutput.match(/\{[\s\S]*?\}/g);
+  if (matches) {
+    parsed = matches.map((m, idx) => {
+      try {
+        return JSON.parse(m);
+      } catch {
+        console.warn(`❌ Skipped malformed object #${idx + 1}`);
+        return null;
       }
-    } catch {
-      const match = rawOutput.match(/\[[\s\S]*\]/);
-      if (match) {
-        parsed = JSON.parse(match[0]);
+    }).filter(Boolean);
+  }
+}
+
+
+    console.log("✅ Parsed AI results:", parsed.length, "items for", batch.length, "events");
+
+    // ✅ Enrich with coordinates, suppliers, routes, financial impact
+    const enriched = [];
+    
+    for (let i = 0; i < translatedEvents.length; i++) {
+      const e = translatedEvents[i];
+      const defaults = {
+  risk_score: 0.5,
+  risk_level: "MEDIUM",
+  confidence: 0.5,
+  summary: `Supply chain disruption in ${e.location}`,
+  mitigation: "Monitor situation and prepare contingency plans.",
+  source: e.source || "Unknown"
+};
+
+const aiResult = { ...defaults, ...(parsed[i] || {}) };
+
+      // Normalize risk_score to 0-1 range if needed
+      let normalizedScore = aiResult.risk_score;
+      if (normalizedScore > 1) normalizedScore = normalizedScore / 100;
+
+      // Ensure risk_level matches score
+      let riskLevel = aiResult.risk_level;
+
+// If AI didn't give a valid risk_level, calculate from normalizedScore
+if (!riskLevel || !["LOW", "MEDIUM", "HIGH"].includes(riskLevel.toUpperCase())) {
+  if (normalizedScore >= 0.7) riskLevel = "HIGH";
+  else if (normalizedScore >= 0.4) riskLevel = "MEDIUM";
+  else if (normalizedScore >= 0.2) riskLevel = "LOW";
+  else riskLevel = "VERY LOW";
+}
+
+
+      // ✅ Rate-limited geocoding with cache
+      const coords = await geocodeLocationWithCache(e.location);
+      const linkedSuppliers = matchSuppliers(e.location, suppliers);
+      const routes = generateAffectedRoutes(e.location, linkedSuppliers, suppliers);
+      const delay = estimateDelay(normalizedScore, e.headline);
+      const financialImpact = estimateFinancialImpact(normalizedScore, linkedSuppliers);
+
+      enriched.push({
+  id: uuidv4(),
+  name: e.headline || "Unknown Event",
+  date: e.date,
+  location: e.location,
+  headline: e.headline,
+  risk_score: Math.round(normalizedScore * 100),
+  risk_level: riskLevel,
+  confidence: aiResult.confidence || 0.7,
+  summary: aiResult.summary || "Supply chain event detected.",
+  mitigation: aiResult.mitigation || "Monitor situation and prepare contingency plans.",
+  lat: coords.lat,
+  lng: coords.lng,
+
+  // ✅ Links back to suppliers
+  affected_suppliers: linkedSuppliers,                  // names
+  linked_supplier_ids: suppliers
+    .filter(s => linkedSuppliers.includes(s.supplier_name))
+    .map(s => s.id),                                    // IDs
+
+  affected_routes: routes,
+  estimated_delay: delay,
+  financial_impact: financialImpact,
+  source: aiResult.source || e.source || "Unknown",
+  created_at: new Date().toISOString(),
+  category: e.category || "supply_chain",
+  severity: e.severity || "medium"
+});
+
+
+      // ✅ Add 1 second delay between geocoding calls
+      if (i < translatedEvents.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1100));
       }
     }
 
-    console.log("✅ Parsed AI results:", parsed.length, "items");
-
-    // ✅ Enrich with coordinates, suppliers, routes, financial impact
-    const enriched = await Promise.all(
-      translatedEvents.map(async (e, i) => {
-        const aiResult = parsed[i] || {
-          risk_score: 0.5,
-          risk_level: "MEDIUM",
-          confidence: 0.5,
-          summary: "Event detected but AI analysis incomplete.",
-          mitigation: "Manual review recommended.",
-          source: e.source || "Unknown"
-        };
-
-        // Normalize risk_score to 0-1 range if needed
-        let normalizedScore = aiResult.risk_score;
-        if (normalizedScore > 1) normalizedScore = normalizedScore / 100;
-
-        // Ensure risk_level matches score
-        let riskLevel = aiResult.risk_level;
-        if (normalizedScore >= 0.6) riskLevel = "HIGH";
-        else if (normalizedScore >= 0.3) riskLevel = "MEDIUM";
-        else if (normalizedScore >= 0.2) riskLevel = "LOW";
-        else riskLevel = "VERY LOW";
-
-        const coords = await geocodeLocation(e.location);
-        const linkedSuppliers = matchSuppliers(e.location, suppliers);
-        const routes = generateAffectedRoutes(e.location, linkedSuppliers, suppliers);
-        const delay = estimateDelay(normalizedScore, e.headline);
-        const financialImpact = estimateFinancialImpact(normalizedScore, linkedSuppliers);
-
-        return {
-          id: uuidv4(),
-          name: e.headline || "Unknown Event",
-          date: e.date,
-          location: e.location,
-          headline: e.headline,
-          risk_score: Math.round(normalizedScore * 100), // Convert to 0-100
-          risk_level: riskLevel,
-          confidence: aiResult.confidence || 0.7,
-          summary: aiResult.summary || "Supply chain event detected.",
-          mitigation: aiResult.mitigation || "Monitor situation and prepare contingency plans.",
-          lat: coords.lat,
-          lng: coords.lng,
-          affected_suppliers: linkedSuppliers,
-          affected_routes: routes,
-          estimated_delay: delay,
-          financial_impact: financialImpact,
-          source: aiResult.source || e.source || "Unknown",
-          created_at: new Date().toISOString(),
-          category: e.category || "supply_chain",
-          severity: e.severity || "medium"
-        };
-      })
-    );
-
-    // ✅ Filter out low-impact risks (score < 30)
     const significantRisks = enriched.filter(r => r.risk_score >= 20);
-    console.log(`✅ Filtered to ${significantRisks.length}/${enriched.length} significant risks (score >= 30)`);
+    console.log(`✅ Batch complete: ${significantRisks.length}/${enriched.length} significant risks`);
 
     return significantRisks;
 
   } catch (err) {
     console.error("❌ AI Risk Batch Error:", err.message);
-    console.error("Stack:", err.stack);
-    
-    // Return enriched fallback data
-    return await Promise.all(
-      relevantEvents.map(async (e, i) => {
-        const coords = await geocodeLocation(e.location);
-        const linkedSuppliers = matchSuppliers(e.location, suppliers);
-        
-        return {
-          id: uuidv4(),
-          name: e.headline || "Unknown Event",
-          date: e.date,
-          location: e.location,
-          headline: e.headline,
-          risk_score: 50,
-          risk_level: "MEDIUM",
-          confidence: 0.5,
-          summary: "AI analysis unavailable. Event flagged for manual review.",
-          mitigation: "Monitor developments and contact affected suppliers.",
-          lat: coords.lat,
-          lng: coords.lng,
-          affected_suppliers: linkedSuppliers,
-          affected_routes: generateAffectedRoutes(e.location, linkedSuppliers, suppliers),
-          estimated_delay: "1-3 days",
-          financial_impact: estimateFinancialImpact(0.5, linkedSuppliers),
-          source: e.source || "Unknown",
-          created_at: new Date().toISOString(),
-          category: e.category || "supply_chain",
-          severity: e.severity || "medium"
-        };
-      })
-    );
+    return [];
   }
 }

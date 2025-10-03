@@ -1,6 +1,15 @@
 // backend/services/newsService.js
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
+import ExcelJS from "exceljs";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// Fix __dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const geoMap = {
   india: "Chennai, India",
@@ -19,18 +28,14 @@ const geoMap = {
 
 function extractLocation(title, description) {
   const text = `${title} ${description || ""}`.toLowerCase();
-
   for (const keyword in geoMap) {
     if (text.includes(keyword)) {
       return geoMap[keyword];
     }
   }
-
-  // Try "City, Country"
   const regex = /\b([A-Z][a-z]+(?:, [A-Z][a-z]+)?)\b/;
   const match = (title + " " + description)?.match(regex);
   if (match) return match[0];
-
   return "Global";
 }
 
@@ -47,44 +52,37 @@ function classifySeverity(text) {
 
 function relevanceScore(text) {
   const keywords = [
-    // 🚢 Core Shipping & Trade
     "shipping", "maritime", "cargo", "freight", "container", "vessel",
     "tanker", "barge", "ship", "fleet", "port", "dock", "harbor",
     "shipyard", "seaport",
-
-    // 📦 Supply Chain & Logistics
     "supply chain", "logistics", "warehousing", "distribution", "fulfillment",
     "forwarding", "customs", "clearance", "transit", "trucking",
     "rail freight", "air freight", "sea freight",
-
-    // ⚠️ Disruptions & Events
     "congestion", "delay", "backlog", "reroute", "rerouting", "strike",
     "protest", "shortage", "disruption", "suspension", "shutdown",
     "closure", "blockade", "accident", "collision", "grounding",
     "spill", "piracy", "hijack", "sanctions", "embargo",
     "tariff", "trade war", "storm", "cyclone", "hurricane", "typhoon",
-
-    // 🌐 Global Trade Hotspots
     "suez canal", "panama canal", "strait of hormuz", "south china sea",
     "red sea", "bab el-mandeb", "malacca strait", "persian gulf",
     "indian ocean route", "trans-pacific", "trans-atlantic"
   ];
-
   let score = 0;
   keywords.forEach((kw) => {
     if (text.toLowerCase().includes(kw)) {
       score += 0.2;
     }
   });
-
   return Math.min(score, 1.0);
 }
 
-
 export async function fetchNews() {
   try {
+    // 🔄 Toggle this line to use mock data instead of API
+    return await loadMockNews();
+
     const apiKey = process.env.NEWS_API_KEY;
-    const url = `https://newsapi.org/v2/everything?q=supply+chain&language=en&sortBy=publishedAt&pageSize=5&apiKey=${apiKey}`;
+    const url = `https://newsapi.org/v2/everything?q=supply+chain&language=en&sortBy=publishedAt&pageSize=20&apiKey=${apiKey}`;
     const response = await axios.get(url);
 
     const irrelevant = ["bitcoin", "crypto", "stock", "etf"];
@@ -92,8 +90,6 @@ export async function fetchNews() {
     let articles = response.data.articles
       .map(article => {
         const text = `${article.title} ${article.description}`.toLowerCase();
-
-        // skip irrelevant
         if (irrelevant.some(word => text.includes(word))) return null;
 
         const location = extractLocation(article.title, article.description || "");
@@ -116,14 +112,12 @@ export async function fetchNews() {
       })
       .filter(Boolean);
 
-    // ✅ Keep only relevant OR fallback to top 2
-    let filtered = articles.filter(a => a.relevance_score >= 0.2);
+    let filtered = articles;/*.filter(a => a.relevance_score >= 0.5);
     if (filtered.length === 0) {
       console.warn("⚠️ No relevant news, falling back to top 2 articles");
       filtered = articles.slice(0, 2);
-    }
+    }*/
 
-    // ✅ Guarantee at least one dummy if API gave nothing
     if (filtered.length === 0) {
       console.warn("⚠️ NewsAPI empty, injecting dummy fallback");
       filtered = [{
@@ -145,13 +139,56 @@ export async function fetchNews() {
     return filtered;
   } catch (err) {
     console.error("❌ News API error:", err.message);
-    // absolute last-resort dummy
     return [{
       id: uuidv4(),
       date: new Date().toISOString(),
       location: "Global",
       headline: "No news available",
       description: "News API failed. Showing placeholder event.",
+      source: "System",
+      url: "",
+      source_language: "en",
+      category: "system",
+      severity: "low",
+      relevance_score: 0
+    }];
+  }
+}
+
+// 📦 Load mock data from Excel
+async function loadMockNews() {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const mockDataPath = path.join(__dirname, "../../backend/mock_news_data.xlsx");
+    await workbook.xlsx.readFile(mockDataPath);
+    const sheet = workbook.getWorksheet("Mock News");
+
+    const articles = sheet.getSheetValues()
+      .slice(2)
+      .map(row => ({
+        id: row[1],
+        date: row[2],
+        location: row[3],
+        headline: row[4],
+        description: row[5],
+        source: row[6],
+        url: row[7],
+        source_language: row[8],
+        category: row[9],
+        severity: row[10],
+        relevance_score: parseFloat(row[11])
+      }));
+
+    console.log("✅ Loaded mock news:", articles.length);
+    return articles;
+  } catch (err) {
+    console.error("❌ Error loading mock data:", err.message);
+    return [{
+      id: uuidv4(),
+      date: new Date().toISOString(),
+      location: "Global",
+      headline: "No mock data available",
+      description: "Excel file failed to load. Showing placeholder event.",
       source: "System",
       url: "",
       source_language: "en",
