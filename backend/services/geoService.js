@@ -8,15 +8,21 @@ const geocodingCache = new Map();
  * Geocode with caching and rate limiting
  */
 export async function geocodeLocationWithCache(location) {
-  // Check cache first
-  if (geocodingCache.has(location)) {
-    console.log(`✨ Cache hit for: ${location}`);
-    return geocodingCache.get(location);
-  }
+  // 🔥 MOCK MODE for testing API (skip external fetch)
+  // Comment/uncomment these 3 lines to switch between MOCK vs LIVE
+  return getCityFallback(location); 
+  // const result = await geocodeLocation(location);
+  // return result;
 
-  const result = await geocodeLocation(location);
-  geocodingCache.set(location, result);
-  return result;
+  // --- Normal cached version (LIVE) ---
+  // if (geocodingCache.has(location)) {
+  //   console.log(`✨ Cache hit for: ${location}`);
+  //   return geocodingCache.get(location);
+  // }
+
+  // const result = await geocodeLocation(location);
+  // geocodingCache.set(location, result);
+  // return result;
 }
 
 /**
@@ -37,8 +43,6 @@ export async function geocodeLocation(location) {
 
     if (!resp.ok) {
       console.error("🌍 Geocoding API failed:", resp.status, resp.statusText);
-      
-      // Return city-based fallback for common locations
       return getCityFallback(location);
     }
 
@@ -60,8 +64,7 @@ export async function geocodeLocation(location) {
 /**
  * Fallback coordinates for common cities
  */
-function getCityFallback(location) 
-  {
+function getCityFallback(location) {
   const fallbacks = {
     "singapore": { lat: 1.3521, lng: 103.8198 },
     "rotterdam, netherlands": { lat: 51.9225, lng: 4.47917 },
@@ -76,7 +79,6 @@ function getCityFallback(location)
     "new york, usa": { lat: 40.7128, lng: -74.0060 },
     "tokyo, japan": { lat: 35.6895, lng: 139.6917 },
     "chennai, india": { lat: 13.0827, lng: 80.2707 },
-    // keep previously present fallbacks and extras
     "mumbai, india": { lat: 19.0760, lng: 72.8777 },
     "shanghai, china": { lat: 31.2304, lng: 121.4737 },
     "dubai, uae": { lat: 25.2048, lng: 55.2708 },
