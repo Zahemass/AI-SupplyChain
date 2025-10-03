@@ -2,6 +2,7 @@
 import axios from "axios";
 import pLimit from "p-limit";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -18,7 +19,7 @@ const REQUESTS_PER_MINUTE = parseInt(process.env.CEREBRAS_RPM || "60", 10); // d
 const MIN_DELAY = Math.ceil(60000 / REQUESTS_PER_MINUTE); // ms between calls
 let lastRequestTime = 0;
 
-// Axios client
+// ---- Axios client
 const client = axios.create({
   baseURL: BASE_URL,
   headers: {
@@ -53,9 +54,18 @@ export function getCerebrasMetrics() {
   };
 }
 
-// Sleep helper
+// ---- Sleep helper
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---- Cache (in-memory for now)
+const cerebrasCache = new Map();
+function cacheKey(prompt, opts) {
+  return crypto
+    .createHash("sha256")
+    .update(prompt + JSON.stringify(opts || {}))
+    .digest("hex");
 }
 
 // Only 1 concurrent request
@@ -70,6 +80,14 @@ export async function analyzeWithCerebras(prompt, opts = {}) {
     const temperature = typeof opts.temperature === "number" ? opts.temperature : 0.2;
     const max_tokens = opts.max_tokens || 512;
     const maxAttempts = opts.maxAttempts || 4;
+
+    const key = cacheKey(prompt, { model, temperature, max_tokens });
+
+    // ✅ Check cache
+    if (cerebrasCache.has(key)) {
+      console.log(`✨ Cache hit for Cerebras [${model}]`);
+      return cerebrasCache.get(key);
+    }
 
     cerebrasTotalCalls += 1;
     cerebrasInFlight += 1;
@@ -104,6 +122,9 @@ export async function analyzeWithCerebras(prompt, opts = {}) {
             console.warn(`⚠️ Empty content from Cerebras (attempt ${attempt})`);
             throw { transient: true, message: "Empty content" };
           }
+
+          // ✅ Save to cache
+          cerebrasCache.set(key, content);
 
           // Track token usage
           const usage = resp.data?.usage || {};

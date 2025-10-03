@@ -1,3 +1,4 @@
+// backend/services/aiRiskService.js
 import { analyzeWithCerebras } from "./cerebrasClient.js";
 import { translateToEnglish } from "./translatorService.js";
 import { geocodeLocationWithCache } from "./geoService.js";
@@ -14,9 +15,9 @@ function safeJsonParse(str) {
       let fixed = str
         .replace(/```json/g, "")
         .replace(/```/g, "")
-        .replace(/\$/g, "")          // remove $
-        .replace(/,\s*}/g, "}")      // remove trailing commas
-        .replace(/,\s*]/g, "]");     // remove trailing commas in arrays
+        .replace(/\$/g, "")
+        .replace(/,\s*}/g, "}")
+        .replace(/,\s*]/g, "]");
       return JSON.parse(fixed);
     } catch (err2) {
       console.error("❌ Failed to recover JSON:", err2.message);
@@ -29,14 +30,22 @@ function safeJsonParse(str) {
  * 🔥 AI Supplier Matching
  */
 async function intelligentSupplierMatching(event, suppliers) {
-  const prompt = `Event: "${event.headline}" in ${event.location}
+  const prompt = `You are analyzing supply chain risks.
 
-Available suppliers:
-${suppliers.slice(0, 20).map(s => `- ${s.supplier_name} (${s.location}, produces: ${s.product})`).join('\n')}
+Event: "${event.headline}" at ${event.location}, severity: ${event.severity || "unknown"}.
+
+Available suppliers (sample up to 20):
+${suppliers.slice(0, 20).map(s => `- ${s.supplier_name} (${s.location}, produces: ${s.product})`).join("\n")}
+
+Which suppliers are DIRECTLY affected?
+Consider:
+- Geographic proximity (same city = high risk)
+- Industry relevance (port closure affects logistics more than inland factories)
+- Dependencies (steel → auto parts)
 
 Return ONLY valid JSON array of supplier names.`;
 
-  const response = await analyzeWithCerebras(prompt, { max_tokens: 200 });
+  const response = await analyzeWithCerebras(prompt, { max_tokens: 300 });
   return safeJsonParse(response) || [];
 }
 
@@ -44,12 +53,23 @@ Return ONLY valid JSON array of supplier names.`;
  * 🔥 AI Route Impact Analysis
  */
 async function analyzeRouteImpact(event, routes) {
-  const prompt = `Event: "${event.headline}" in ${event.location}
+  const prompt = `You are analyzing transport disruptions.
 
-Routes:
-${routes.map(r => `- ${r.origin} → ${r.destination} (${r.mode})`).join('\n')}
+Event: "${event.headline}" at ${event.location}, severity: ${event.severity || "unknown"}.
 
-Return ONLY valid JSON array with {route, disruption_prob, delay_hours, alternative, reasoning}.`;
+Routes to evaluate:
+${routes.map(r => `- ${r.origin} → ${r.destination} (${r.mode})`).join("\n")}
+
+For each route:
+- Estimate disruption_prob (0–1)
+- Estimate delay_hours
+- Suggest alternative routes if possible
+- Provide reasoning
+
+Return ONLY valid JSON array like:
+[
+  { "route": "A → B (mode)", "disruption_prob": 0.3, "delay_hours": 24, "alternative": "alt route", "reasoning": "..." }
+]`;
 
   const response = await analyzeWithCerebras(prompt, { max_tokens: 800 });
   return safeJsonParse(response) || [];
@@ -59,8 +79,9 @@ Return ONLY valid JSON array with {route, disruption_prob, delay_hours, alternat
  * 🔥 AI Financial Impact Estimation
  */
 async function estimateFinancialImpactAI(event, suppliers, routes) {
-  const prompt = `Event: "${event.headline}" in ${event.location}
-Severity: ${event.severity || "unknown"}
+  const prompt = `Estimate financial disruption from supply chain event.
+
+Event: "${event.headline}" at ${event.location}, severity: ${event.severity || "unknown"}.
 
 Suppliers affected: ${suppliers.length}
 Routes affected: ${routes.length}
@@ -75,7 +96,7 @@ Return ONLY valid JSON like:
     "opportunity_costs": 400000,
     "recovery_costs": 300000
   },
-  "reasoning": "..."
+  "reasoning": "Explain cost drivers clearly"
 }`;
 
   const response = await analyzeWithCerebras(prompt, { max_tokens: 400 });
@@ -83,10 +104,7 @@ Return ONLY valid JSON like:
 }
 
 /**
- * Batch event analysis
- */
-/**
- * Batch event analysis
+ * 🔥 Batch event analysis
  */
 export async function analyzeEventsBatch(events) {
   console.log("⚡ analyzeEventsBatch called with", events.length, "events");
@@ -99,42 +117,62 @@ export async function analyzeEventsBatch(events) {
     console.warn("⚠️ Could not load suppliers:", err.message);
   }
 
-  const relevantEvents = events.filter(e => e.headline && e.location && e.location !== "Global");
+  const relevantEvents = events.filter(
+    e => e.headline && e.location && e.location !== "Global"
+  );
   console.log(`📊 Processing ${relevantEvents.length}/${events.length} relevant events`);
 
   if (!relevantEvents.length) return [];
 
-  // ✅ Only take the first batch
-  const BATCH_SIZE = 10;
+  // ✅ Only take the first batch (hackathon-safe)
+  const BATCH_SIZE = 5;
   const firstBatch = relevantEvents.slice(0, BATCH_SIZE);
-  console.log(`🔄 Processing batch 1/1 (only first batch)`);
+  console.log(`🔄 Processing batch 1/1 (max ${BATCH_SIZE} events)`);
 
   const batchResults = await processBatch(firstBatch, suppliers);
 
-  // ✅ Return immediately after first batch
   return batchResults;
 }
 
-
 /**
- * Process one batch
+ * 🔥 Process one batch
  */
 async function processBatch(batch, suppliers) {
   const translatedEvents = batch.map(e => ({
     ...e,
-    headline: translateToEnglish ? translateToEnglish(e.headline, e.lang || "en") : e.headline,
+    headline:
+      translateToEnglish ? translateToEnglish(e.headline, e.lang || "en") : e.headline,
   }));
 
-  const prompt = `Analyze these events and return ONLY JSON array:
+  // ✅ Batch prompt now includes actual events
+  const prompt = `You are an AI supply chain risk analyzer.
+Analyze the following events and assign risk scores.
+
+Events:
+${translatedEvents
+  .map(
+    (e, i) =>
+      `${i + 1}. "${e.headline}" at ${e.location}, severity: ${
+        e.severity || "medium"
+      }, source: ${e.source || "unknown"}`
+  )
+  .join("\n")}
+
+Return ONLY valid JSON array where each entry corresponds to an event:
 [
-  { "risk_score": 0.75, "risk_level": "HIGH", "confidence": 0.9,
-    "summary": "Impact sentence", "mitigation": "Action", "source": "Reuters" }
+  { 
+    "risk_score": 0.75, 
+    "risk_level": "HIGH", 
+    "confidence": 0.9,
+    "summary": "One-sentence impact", 
+    "mitigation": "Action", 
+    "source": "Reuters"
+  }
 ]`;
 
   try {
     const rawOutput = await analyzeWithCerebras(prompt, { max_tokens: 700 });
     let parsed = safeJsonParse(rawOutput) || [];
-
     if (!Array.isArray(parsed)) parsed = [parsed];
 
     const enriched = [];
@@ -146,25 +184,29 @@ async function processBatch(batch, suppliers) {
       let normalizedScore = aiResult.risk_score || 0.5;
       if (normalizedScore > 1) normalizedScore = normalizedScore / 100;
 
-      let riskLevel = aiResult.risk_level || (normalizedScore >= 0.7 ? "HIGH" : normalizedScore >= 0.4 ? "MEDIUM" : "LOW");
+      let riskLevel =
+        aiResult.risk_level ||
+        (normalizedScore >= 0.7
+          ? "HIGH"
+          : normalizedScore >= 0.4
+          ? "MEDIUM"
+          : "LOW");
 
       const coords = await geocodeLocationWithCache(e.location);
 
-      // Run AI helpers
-      // If no real routes dataset, generate defaults
-const MockRoutes = [
-  { origin: e.location.split(",")[0], destination: "Singapore", mode: "sea" },
-  { origin: e.location.split(",")[0], destination: "Dubai", mode: "sea" },
-  { origin: e.location.split(",")[0], destination: "Los Angeles", mode: "sea" },
-  { origin: e.location.split(",")[0], destination: "Hamburg", mode: "sea" }
-];
+      // ✅ Mock fallback routes
+      const MockRoutes = [
+        { origin: e.location.split(",")[0], destination: "Singapore", mode: "sea" },
+        { origin: e.location.split(",")[0], destination: "Dubai", mode: "sea" },
+        { origin: e.location.split(",")[0], destination: "Los Angeles", mode: "sea" },
+        { origin: e.location.split(",")[0], destination: "Hamburg", mode: "sea" },
+      ];
 
-const [linkedSuppliers, routes, financialImpact] = await Promise.all([
-  intelligentSupplierMatching(e, suppliers),
-  analyzeRouteImpact(e, MockRoutes),   // ✅ use fallback routes instead of suppliers
-  estimateFinancialImpactAI(e, suppliers, MockRoutes)
-]);
-
+      const [linkedSuppliers, routes, financialImpact] = await Promise.all([
+        intelligentSupplierMatching(e, suppliers),
+        analyzeRouteImpact(e, MockRoutes),
+        estimateFinancialImpactAI(e, suppliers, MockRoutes),
+      ]);
 
       enriched.push({
         id: uuidv4(),
@@ -180,7 +222,9 @@ const [linkedSuppliers, routes, financialImpact] = await Promise.all([
         lng: coords.lng,
 
         affected_suppliers: linkedSuppliers,
-        linked_supplier_ids: suppliers.filter(s => linkedSuppliers.includes(s.supplier_name)).map(s => s.id),
+        linked_supplier_ids: suppliers
+          .filter(s => linkedSuppliers.includes(s.supplier_name))
+          .map(s => s.id),
 
         affected_routes: routes,
         financial_impact: financialImpact,
@@ -191,8 +235,9 @@ const [linkedSuppliers, routes, financialImpact] = await Promise.all([
         severity: e.severity || "medium",
       });
 
+      // ⏳ Delay to respect RPM
       if (i < translatedEvents.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
 
