@@ -117,6 +117,7 @@ export async function analyzeEventsBatch(events) {
     console.warn("⚠️ Could not load suppliers:", err.message);
   }
 
+  // ✅ Filter valid events
   const relevantEvents = events.filter(
     e => e.headline && e.location && e.location !== "Global"
   );
@@ -124,15 +125,42 @@ export async function analyzeEventsBatch(events) {
 
   if (!relevantEvents.length) return [];
 
-  // ✅ Only take the first batch (hackathon-safe)
+  // ✅ Process up to 3 batches of 5 events each
   const BATCH_SIZE = 5;
-  const firstBatch = relevantEvents.slice(0, BATCH_SIZE);
-  console.log(`🔄 Processing batch 1/1 (max ${BATCH_SIZE} events)`);
+  const MAX_BATCHES = 3;
+  let allResults = [];
 
-  const batchResults = await processBatch(firstBatch, suppliers);
+  const totalBatches = Math.ceil(relevantEvents.length / BATCH_SIZE);
+  const batchesToProcess = Math.min(totalBatches, MAX_BATCHES);
 
-  return batchResults;
+  console.log(`🚀 Processing up to ${batchesToProcess}/${totalBatches} batches`);
+
+  for (let i = 0; i < relevantEvents.length && i / BATCH_SIZE < MAX_BATCHES; i += BATCH_SIZE) {
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    const batch = relevantEvents.slice(i, i + BATCH_SIZE);
+
+    console.log(`🔄 Processing batch ${batchNumber}/${batchesToProcess} (${batch.length} events)`);
+
+    const batchResults = await processBatch(batch, suppliers);
+    allResults = allResults.concat(batchResults);
+
+    // ✅ Stop early if we reached our limit
+    if (batchNumber >= MAX_BATCHES) {
+      console.log(`🛑 Reached batch limit (${MAX_BATCHES}). Returning results early.`);
+      break;
+    }
+
+    // ⏳ Wait between batches to respect rate limits
+    if (i + BATCH_SIZE < relevantEvents.length) {
+      console.log("⏳ Waiting 5s before next batch to respect rate limits...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
+
+  console.log(`✅ Finished processing ${allResults.length} total risk entries.`);
+  return allResults;
 }
+
 
 /**
  * 🔥 Process one batch
