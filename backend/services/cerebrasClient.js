@@ -16,7 +16,7 @@ const CEREBRAS_MODEL =
 
 // ---- Concurrency limiter (to prevent API overload)
 // Adjust based on your Cerebras plan tier: 3–5 is usually safe
-const limit = pLimit(3);
+const limit = pLimit(1);
 
 // ---- In-memory cache
 const cerebrasCache = new Map();

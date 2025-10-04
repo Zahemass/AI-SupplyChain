@@ -2,64 +2,94 @@
 import { getSuppliers as loadBaseSuppliers } from "../services/supplierService.js";
 import { fetchNews } from "../services/newsService.js";
 import { analyzeEventsBatch } from "../services/aiRiskService.js";
-import { getSimulatedEvents } from "./simulateEventController.js"; // 👈 Import simulated events
+import { getSimulatedEvents } from "./simulateEventController.js";
 
 /**
- * ✅ Get suppliers with real-time risk integration
- * Chains: news + simulated events → risk analysis → supplier merge
+ * ✅ Optimized getSuppliersWithRisks (No Cache Version)
+ * - Parallel fetch (news + simulated)
+ * - Event filtering + deduplication
+ * - Top 15 limit for fast AI run
+ * - Clean, production-safe logging
  */
 export const getSuppliersWithRisks = async (req, res) => {
+  const startTime = Date.now();
+
   try {
-    console.log("🏭 getSuppliersWithRisks: Starting...");
+    console.log("🏭 getSuppliersWithRisks: Starting optimized (no cache) flow...");
 
-    // Step 1: Fetch latest news
-    console.log("📰 Step 1: Fetching news...");
-    const news = await fetchNews();
-    console.log(`📰 Fetched ${news.length} news items`);
+    // Step 1: Fetch news + simulated events in parallel
+    const step1Start = Date.now();
+    console.log("📰 Step 1: Fetching news and simulated events in parallel...");
+    const [news, simulated] = await Promise.all([
+      fetchNews(),
+      Promise.resolve(getSimulatedEvents())
+    ]);
+    console.log(
+      `📰 Step 1 done in ${((Date.now() - step1Start) / 1000).toFixed(2)}s: got ${news.length} news + ${simulated.length} simulated`
+    );
 
-    // Step 1.5: Add simulated events
-    const simulated = getSimulatedEvents();
-    console.log(`🎭 Adding ${simulated.length} simulated events`);
     const allEvents = [...news, ...simulated];
 
-    // Step 2: Analyze risks (if events available)
-    let risks = [];
-    if (allEvents.length > 0) {
-      const filteredEvents = allEvents.filter(n => {
-        const isValid =
-          n.location &&
-          n.location !== "Global" &&
-          (!n.relevance_score || n.relevance_score >= 0.5);
+    // Step 2: Filter relevant events
+    const step2Start = Date.now();
+    const filteredEvents = allEvents.filter(n => {
+      const valid =
+        n.location &&
+        n.location !== "Global" &&
+        (!n.relevance_score || n.relevance_score >= 0.5);
+      return valid;
+    });
 
-        if (!isValid) {
-          console.log(
-            `🗑️ Filtering out: "${n.headline}" (location: ${n.location}, relevance: ${n.relevance_score})`
-          );
-        }
-        return isValid;
-      });
+    console.log(
+      `✅ Step 2 done in ${((Date.now() - step2Start) / 1000).toFixed(2)}s: ${filteredEvents.length}/${allEvents.length} relevant events`
+    );
 
-      console.log(
-        `✅ Filtered to ${filteredEvents.length}/${allEvents.length} relevant events`
-      );
-
-      if (filteredEvents.length > 0) {
-        console.log("🧠 Step 2: Analyzing risks with Cerebras...");
-        risks = await analyzeEventsBatch(filteredEvents);
-        console.log(`🧠 Analyzed ${risks.length} risks`);
-      } else {
-        console.log("⚠️ No relevant events to analyze");
-      }
-    } else {
-      console.log("⚠️ No news/events available");
+    if (!filteredEvents.length) {
+      console.log("⚠️ No relevant events to analyze — returning base suppliers...");
+      const suppliers = await loadBaseSuppliers([]);
+      return res.json(suppliers);
     }
 
-    // Step 3: Merge risks into suppliers
-    console.log("🏭 Step 3: Merging risks into suppliers...");
-    const suppliers = await loadBaseSuppliers(risks);
-    console.log(`✅ Returning ${suppliers.length} suppliers with risk data`);
+    // Step 3: Remove duplicate headlines
+    const step3Start = Date.now();
+    const uniqueEvents = [];
+    const seen = new Set();
+    for (const e of filteredEvents) {
+      if (!seen.has(e.headline)) {
+        seen.add(e.headline);
+        uniqueEvents.push(e);
+      }
+    }
+    console.log(
+      `🧩 Step 3 done in ${((Date.now() - step3Start) / 1000).toFixed(2)}s: deduplicated to ${uniqueEvents.length} unique events`
+    );
 
-    // Log risk distribution
+    // Step 4: Sort and limit top 15 high-relevance events
+    const step4Start = Date.now();
+    const topEvents = uniqueEvents
+      .sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0))
+      .slice(0, 15);
+    console.log(
+      `🎯 Step 4 done in ${((Date.now() - step4Start) / 1000).toFixed(2)}s: selected top ${topEvents.length} events`
+    );
+
+    // Step 5: AI risk analysis
+    const step5Start = Date.now();
+    console.log("🧠 Step 5: Running AI risk analysis with Cerebras...");
+    const risks = await analyzeEventsBatch(topEvents);
+    console.log(
+      `🧠 Step 5 done in ${((Date.now() - step5Start) / 1000).toFixed(2)}s: analyzed ${risks.length} risks`
+    );
+
+    // Step 6: Merge risks into suppliers
+    const step6Start = Date.now();
+    console.log("🏭 Step 6: Merging risks into suppliers...");
+    const suppliers = await loadBaseSuppliers(risks);
+    console.log(
+      `✅ Step 6 done in ${((Date.now() - step6Start) / 1000).toFixed(2)}s: ${suppliers.length} suppliers merged`
+    );
+
+    // Step 7: Risk summary
     const riskCounts = {
       HIGH: suppliers.filter(s => s.current_risk_level === "HIGH").length,
       MEDIUM: suppliers.filter(s => s.current_risk_level === "MEDIUM").length,
@@ -67,14 +97,17 @@ export const getSuppliersWithRisks = async (req, res) => {
     };
     console.log("📊 Risk distribution:", riskCounts);
 
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`🏁 getSuppliersWithRisks completed in ${totalTime}s`);
+
     res.json(suppliers);
   } catch (error) {
     console.error("❌ getSuppliersWithRisks error:", error.message);
     console.error("Stack:", error.stack);
 
-    // Fallback: Return suppliers without risk data
+    // Fallback: Return base suppliers (no risk data)
     try {
-      console.log("⚠️ Attempting fallback: loading basic suppliers...");
+      console.log("⚠️ Fallback: loading base suppliers...");
       const { loadSuppliers } = await import("../services/supplierService.js");
       const basicSuppliers = loadSuppliers().map(s => ({
         ...s,
@@ -86,7 +119,7 @@ export const getSuppliersWithRisks = async (req, res) => {
           `supplier_${s.supplier_name.toLowerCase().replace(/\s/g, "_")}`,
       }));
       console.log(
-        `✅ Fallback: Returning ${basicSuppliers.length} suppliers without risk data`
+        `✅ Fallback: Returning ${basicSuppliers.length} basic suppliers`
       );
       res.json(basicSuppliers);
     } catch (fallbackError) {

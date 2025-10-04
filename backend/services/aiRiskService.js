@@ -117,7 +117,7 @@ export async function analyzeEventsBatch(events) {
 
   const BATCH_SIZE = 5;
   const MAX_BATCHES = 3;
-  const CONCURRENCY_LIMIT = 2; //
+  const CONCURRENCY_LIMIT = 2; // ✅ 2 batches run at a time
 
   const totalBatches = Math.ceil(relevantEvents.length / BATCH_SIZE);
   const batchesToProcess = Math.min(totalBatches, MAX_BATCHES);
