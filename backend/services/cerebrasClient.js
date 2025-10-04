@@ -1,65 +1,24 @@
 // backend/services/cerebrasClient.js
-import axios from "axios";
-import pLimit from "p-limit";
+import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import pLimit from "p-limit";
 
 dotenv.config();
 
-const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
-const CEREBRAS_MODEL = process.env.CEREBRAS_MODEL || "llama3.1-8b";
-const BASE_URL = process.env.CEREBRAS_BASE_URL || "https://api.cerebras.ai/v1";
-
-if (!CEREBRAS_API_KEY) {
-  console.warn("⚠️ Warning: CEREBRAS_API_KEY not set. Cerebras calls will fail.");
-}
-
-// ---- Rate limit config
-const REQUESTS_PER_MINUTE = parseInt(process.env.CEREBRAS_RPM || "60", 10); // default 60/min
-const MIN_DELAY = Math.ceil(60000 / REQUESTS_PER_MINUTE); // ms between calls
-let lastRequestTime = 0;
-
-// ---- Axios client
-const client = axios.create({
-  baseURL: BASE_URL,
-  headers: {
-    Authorization: `Bearer ${CEREBRAS_API_KEY}`,
-    "Content-Type": "application/json",
-  },
-  timeout: 120000,
+// ---- Initialize Cerebras SDK client
+const client = new Cerebras({
+  apiKey: process.env.CEREBRAS_API_KEY,
 });
 
-// ---- Metrics
-let cerebrasInFlight = 0;
-let cerebrasTotalCalls = 0;
-let cerebrasFailedCalls = 0;
-let cerebrasTokenUsage = {
-  prompt_tokens: 0,
-  completion_tokens: 0,
-  total_tokens: 0,
-};
-let lastCall = null;
+const CEREBRAS_MODEL =
+  process.env.CEREBRAS_MODEL || "llama-4-scout-17b-16e-instruct";
 
-/**
- * 📊 Metrics
- */
-export function getCerebrasMetrics() {
-  return {
-    inFlight: cerebrasInFlight,
-    totalCalls: cerebrasTotalCalls,
-    failedCalls: cerebrasFailedCalls,
-    tokens: { ...cerebrasTokenUsage },
-    lastCall,
-    timestamp: new Date().toISOString(),
-  };
-}
+// ---- Concurrency limiter (to prevent API overload)
+// Adjust based on your Cerebras plan tier: 3–5 is usually safe
+const limit = pLimit(3);
 
-// ---- Sleep helper
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ---- Cache (in-memory for now)
+// ---- In-memory cache
 const cerebrasCache = new Map();
 function cacheKey(prompt, opts) {
   return crypto
@@ -68,105 +27,115 @@ function cacheKey(prompt, opts) {
     .digest("hex");
 }
 
-// Only 1 concurrent request
-const limit = pLimit(1);
+// ---- Metrics tracking
+let cerebrasStats = {
+  totalCalls: 0,
+  failedCalls: 0,
+  cacheHits: 0,
+  avgLatencyMs: 0,
+  lastLatencyMs: 0,
+  lastPromptPreview: "",
+  tokensUsed: {
+    prompt: 0,
+    completion: 0,
+    total: 0,
+  },
+};
 
 /**
- * analyzeWithCerebras(prompt, opts)
+ * 🧠 Get Cerebras SDK performance metrics
+ */
+export function getCerebrasMetrics() {
+  return {
+    ...cerebrasStats,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * 🚀 analyzeWithCerebras(prompt, opts)
+ * Calls Cerebras SDK for inference with caching, retries, and metrics
  */
 export async function analyzeWithCerebras(prompt, opts = {}) {
   return limit(async () => {
     const model = opts.model || CEREBRAS_MODEL;
-    const temperature = typeof opts.temperature === "number" ? opts.temperature : 0.2;
-    const max_tokens = opts.max_tokens || 512;
-    const maxAttempts = opts.maxAttempts || 4;
+    const temperature = opts.temperature ?? 0.2;
+    const max_tokens = opts.max_tokens ?? 512;
+    const maxAttempts = opts.maxAttempts ?? 3;
 
     const key = cacheKey(prompt, { model, temperature, max_tokens });
 
-    // ✅ Check cache
+    // ✅ Cache hit check
     if (cerebrasCache.has(key)) {
+      cerebrasStats.cacheHits++;
       console.log(`✨ Cache hit for Cerebras [${model}]`);
       return cerebrasCache.get(key);
     }
 
-    cerebrasTotalCalls += 1;
-    cerebrasInFlight += 1;
+    cerebrasStats.totalCalls++;
 
-    try {
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const start = Date.now();
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const start = Date.now();
 
-          // ✅ Enforce RPM limit
-          const now = Date.now();
-          const elapsed = now - lastRequestTime;
-          if (elapsed < MIN_DELAY) {
-            const wait = MIN_DELAY - elapsed;
-            console.log(`⏳ Rate limiting: waiting ${wait}ms to respect RPM`);
-            await sleep(wait);
-          }
-          lastRequestTime = Date.now();
+        const completion = await client.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are an AI risk analyzer for supply chain disruptions. Return ONLY JSON output.",
+            },
+            { role: "user", content: prompt },
+          ],
+          temperature,
+          max_tokens,
+        });
 
-          const resp = await client.post("/chat/completions", {
-            model,
-            messages: [
-              { role: "system", content: "You are an AI risk analyzer for supply chain disruptions. Return ONLY JSON." },
-              { role: "user", content: prompt },
-            ],
-            temperature,
-            max_tokens,
-          });
+        const content = completion.choices?.[0]?.message?.content?.trim();
+        if (!content) throw new Error("Empty content from Cerebras");
 
-          const content = resp.data?.choices?.[0]?.message?.content?.trim();
-          if (!content) {
-            console.warn(`⚠️ Empty content from Cerebras (attempt ${attempt})`);
-            throw { transient: true, message: "Empty content" };
-          }
+        // ✅ Save to cache
+        cerebrasCache.set(key, content);
 
-          // ✅ Save to cache
-          cerebrasCache.set(key, content);
+        // ✅ Update metrics
+        const latency = Date.now() - start;
+        const usage = completion.usage || {};
+        cerebrasStats.lastLatencyMs = latency;
+        cerebrasStats.avgLatencyMs =
+          (cerebrasStats.avgLatencyMs * (cerebrasStats.totalCalls - 1) +
+            latency) /
+          cerebrasStats.totalCalls;
+        cerebrasStats.tokensUsed.prompt += usage.prompt_tokens || 0;
+        cerebrasStats.tokensUsed.completion += usage.completion_tokens || 0;
+        cerebrasStats.tokensUsed.total += usage.total_tokens || 0;
+        cerebrasStats.lastPromptPreview = prompt.slice(0, 120);
 
-          // Track token usage
-          const usage = resp.data?.usage || {};
-          cerebrasTokenUsage.prompt_tokens += usage.prompt_tokens || 0;
-          cerebrasTokenUsage.completion_tokens += usage.completion_tokens || 0;
-          cerebrasTokenUsage.total_tokens += usage.total_tokens || 0;
+        console.log(
+          `✅ Cerebras [${model}] success in ${latency}ms | tokens: ${
+            usage.total_tokens ?? "?"
+          }`
+        );
 
-          lastCall = {
-            model,
-            promptPreview: prompt.slice(0, 120) + (prompt.length > 120 ? "...": ""),
-            tokens: usage,
-            latency_ms: Date.now() - start,
-            timestamp: new Date().toISOString(),
-          };
+        return content;
+      } catch (err) {
+        console.warn(
+          `⚠️ Cerebras attempt ${attempt}/${maxAttempts} failed: ${
+            err.message || err
+          }`
+        );
 
-          console.log(`✅ Cerebras [${model}] success in ${Date.now() - start}ms | tokens: ${usage.total_tokens || "?"}`);
-          console.log(`✅ Cerebras [${model}] response:`, content);
-          return content;
-        } catch (err) {
-          const status = err.response?.status;
-          const code = err.response?.data?.code;
-          const isRate = code === "request_quota_exceeded" || status === 429;
-          const isServerErr = status >= 500 && status < 600;
-
-          if ((err.transient || isRate || isServerErr) && attempt < maxAttempts) {
-            const delay = Math.min(500 * Math.pow(2, attempt - 1), 5000) + Math.floor(Math.random() * 200);
-            console.warn(`⚠️ Cerebras retry ${attempt}/${maxAttempts}:`, err.message || err);
-            console.warn(`⏳ Retrying after ${delay}ms`);
-            await sleep(delay);
-            continue;
-          }
-
-          throw err;
+        if (attempt < maxAttempts) {
+          const delay = Math.min(1000 * attempt, 3000);
+          console.log(`⏳ Retrying after ${delay}ms...`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
         }
+
+        cerebrasStats.failedCalls++;
+        console.error("❌ Cerebras SDK error:", err);
+        throw err;
       }
-      throw new Error("Cerebras analysis failed after retries");
-    } catch (err) {
-      cerebrasFailedCalls += 1;
-      console.error("❌ Cerebras API error:", err.response?.data || err.message || err);
-      throw err;
-    } finally {
-      cerebrasInFlight = Math.max(0, cerebrasInFlight - 1);
     }
   });
 }

@@ -5,7 +5,7 @@ import { geocodeLocationWithCache } from "./geoService.js";
 import { v4 as uuidv4 } from "uuid";
 
 /**
- * ✅ Safe JSON Parse (cleans common AI issues)
+ * ✅ Safe JSON Parse
  */
 function safeJsonParse(str) {
   try {
@@ -38,11 +38,6 @@ Available suppliers (sample up to 20):
 ${suppliers.slice(0, 20).map(s => `- ${s.supplier_name} (${s.location}, produces: ${s.product})`).join("\n")}
 
 Which suppliers are DIRECTLY affected?
-Consider:
-- Geographic proximity (same city = high risk)
-- Industry relevance (port closure affects logistics more than inland factories)
-- Dependencies (steel → auto parts)
-
 Return ONLY valid JSON array of supplier names.`;
 
   const response = await analyzeWithCerebras(prompt, { max_tokens: 300 });
@@ -60,13 +55,7 @@ Event: "${event.headline}" at ${event.location}, severity: ${event.severity || "
 Routes to evaluate:
 ${routes.map(r => `- ${r.origin} → ${r.destination} (${r.mode})`).join("\n")}
 
-For each route:
-- Estimate disruption_prob (0–1)
-- Estimate delay_hours
-- Suggest alternative routes if possible
-- Provide reasoning
-
-Return ONLY valid JSON array like:
+Return ONLY valid JSON array:
 [
   { "route": "A → B (mode)", "disruption_prob": 0.3, "delay_hours": 24, "alternative": "alt route", "reasoning": "..." }
 ]`;
@@ -104,10 +93,12 @@ Return ONLY valid JSON like:
 }
 
 /**
- * 🔥 Batch event analysis
+ * 🔥 Batch event analysis (PARALLEL with timing logs)
  */
 export async function analyzeEventsBatch(events) {
   console.log("⚡ analyzeEventsBatch called with", events.length, "events");
+
+  const t0 = Date.now();
 
   let suppliers = [];
   try {
@@ -117,7 +108,6 @@ export async function analyzeEventsBatch(events) {
     console.warn("⚠️ Could not load suppliers:", err.message);
   }
 
-  // ✅ Filter valid events
   const relevantEvents = events.filter(
     e => e.headline && e.location && e.location !== "Global"
   );
@@ -125,54 +115,76 @@ export async function analyzeEventsBatch(events) {
 
   if (!relevantEvents.length) return [];
 
-  // ✅ Process up to 3 batches of 5 events each
   const BATCH_SIZE = 5;
   const MAX_BATCHES = 3;
-  let allResults = [];
+  const CONCURRENCY_LIMIT = 2; //
 
   const totalBatches = Math.ceil(relevantEvents.length / BATCH_SIZE);
   const batchesToProcess = Math.min(totalBatches, MAX_BATCHES);
+  console.log(`🚀 Running ${batchesToProcess} batches in parallel (limit: ${CONCURRENCY_LIMIT})`);
 
-  console.log(`🚀 Processing up to ${batchesToProcess}/${totalBatches} batches`);
-
+  const batches = [];
   for (let i = 0; i < relevantEvents.length && i / BATCH_SIZE < MAX_BATCHES; i += BATCH_SIZE) {
-    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-    const batch = relevantEvents.slice(i, i + BATCH_SIZE);
+    batches.push(relevantEvents.slice(i, i + BATCH_SIZE));
+  }
 
-    console.log(`🔄 Processing batch ${batchNumber}/${batchesToProcess} (${batch.length} events)`);
+  const parallelResults = [];
 
-    const batchResults = await processBatch(batch, suppliers);
-    allResults = allResults.concat(batchResults);
+  for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
+    const slice = batches.slice(i, i + CONCURRENCY_LIMIT);
+    const batchLabels = slice.map((_, idx) => `Batch ${i + idx + 1}`).join(", ");
+    console.log(`⚡ Starting parallel group: ${batchLabels}`);
 
-    // ✅ Stop early if we reached our limit
-    if (batchNumber >= MAX_BATCHES) {
-      console.log(`🛑 Reached batch limit (${MAX_BATCHES}). Returning results early.`);
-      break;
+    const groupStart = Date.now();
+
+    const results = await Promise.allSettled(
+      slice.map(async (batch, idx) => {
+        const label = `Batch ${i + idx + 1}`;
+        const start = Date.now();
+        console.log(`🟢 ${label} started (${batch.length} events)...`);
+        const res = await processBatch(batch, suppliers);
+        const end = Date.now();
+        const duration = ((end - start) / 1000).toFixed(2);
+        console.log(`✅ ${label} finished in ${duration}s`);
+        return res;
+      })
+    );
+
+    const groupEnd = Date.now();
+    const groupDuration = ((groupEnd - groupStart) / 1000).toFixed(2);
+    console.log(`🏁 Parallel group finished (${batchLabels}) in ${groupDuration}s`);
+
+    for (const r of results) {
+      if (r.status === "fulfilled") parallelResults.push(...r.value);
+      else console.error("❌ Batch failed:", r.reason?.message);
     }
 
-    // ⏳ Wait between batches to respect rate limits
-    if (i + BATCH_SIZE < relevantEvents.length) {
-      console.log("⏳ Waiting 5s before next batch to respect rate limits...");
-      await new Promise(resolve => setTimeout(resolve, 5000));
+    if (i + CONCURRENCY_LIMIT < batches.length) {
+      console.log("⏳ Cooling down 3s before next parallel group...");
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
 
-  console.log(`✅ Finished processing ${allResults.length} total risk entries.`);
-  return allResults;
-}
+  const t1 = Date.now();
+  console.log(`✅ All ${batchesToProcess} batches done in ${((t1 - t0) / 1000).toFixed(2)}s`);
+  console.log(`🧾 Total risk entries processed: ${parallelResults.length}`);
 
+  return parallelResults;
+}
 
 /**
  * 🔥 Process one batch
  */
 async function processBatch(batch, suppliers) {
-  const translatedEvents = batch.map(e => ({
-    ...e,
-    headline:
-      translateToEnglish ? translateToEnglish(e.headline, e.lang || "en") : e.headline,
-  }));
+  const translatedEvents = await Promise.all(
+    batch.map(async e => ({
+      ...e,
+      headline: translateToEnglish
+        ? await translateToEnglish(e.headline, e.lang || "en")
+        : e.headline,
+    }))
+  );
 
-  // ✅ Batch prompt now includes actual events
   const prompt = `You are an AI supply chain risk analyzer.
 Analyze the following events and assign risk scores.
 
@@ -186,13 +198,13 @@ ${translatedEvents
   )
   .join("\n")}
 
-Return ONLY valid JSON array where each entry corresponds to an event:
+Return ONLY valid JSON array:
 [
   { 
     "risk_score": 0.75, 
     "risk_level": "HIGH", 
     "confidence": 0.9,
-    "summary": "One-sentence impact", 
+    "summary": "Impact summary", 
     "mitigation": "Action", 
     "source": "Reuters"
   }
@@ -203,71 +215,60 @@ Return ONLY valid JSON array where each entry corresponds to an event:
     let parsed = safeJsonParse(rawOutput) || [];
     if (!Array.isArray(parsed)) parsed = [parsed];
 
-    const enriched = [];
+    const enriched = await Promise.all(
+      translatedEvents.map(async (e, i) => {
+        const aiResult = parsed[i] || {};
+        let normalizedScore = aiResult.risk_score || 0.5;
+        if (normalizedScore > 1) normalizedScore = normalizedScore / 100;
 
-    for (let i = 0; i < translatedEvents.length; i++) {
-      const e = translatedEvents[i];
-      const aiResult = parsed[i] || {};
+        const riskLevel =
+          aiResult.risk_level ||
+          (normalizedScore >= 0.7
+            ? "HIGH"
+            : normalizedScore >= 0.4
+            ? "MEDIUM"
+            : "LOW");
 
-      let normalizedScore = aiResult.risk_score || 0.5;
-      if (normalizedScore > 1) normalizedScore = normalizedScore / 100;
+        const coords = await geocodeLocationWithCache(e.location);
 
-      let riskLevel =
-        aiResult.risk_level ||
-        (normalizedScore >= 0.7
-          ? "HIGH"
-          : normalizedScore >= 0.4
-          ? "MEDIUM"
-          : "LOW");
+        const MockRoutes = [
+          { origin: e.location.split(",")[0], destination: "Singapore", mode: "sea" },
+          { origin: e.location.split(",")[0], destination: "Dubai", mode: "sea" },
+          { origin: e.location.split(",")[0], destination: "Los Angeles", mode: "sea" },
+          { origin: e.location.split(",")[0], destination: "Hamburg", mode: "sea" },
+        ];
 
-      const coords = await geocodeLocationWithCache(e.location);
+        const [linkedSuppliers, routes, financialImpact] = await Promise.all([
+          intelligentSupplierMatching(e, suppliers),
+          analyzeRouteImpact(e, MockRoutes),
+          estimateFinancialImpactAI(e, suppliers, MockRoutes),
+        ]);
 
-      // ✅ Mock fallback routes
-      const MockRoutes = [
-        { origin: e.location.split(",")[0], destination: "Singapore", mode: "sea" },
-        { origin: e.location.split(",")[0], destination: "Dubai", mode: "sea" },
-        { origin: e.location.split(",")[0], destination: "Los Angeles", mode: "sea" },
-        { origin: e.location.split(",")[0], destination: "Hamburg", mode: "sea" },
-      ];
-
-      const [linkedSuppliers, routes, financialImpact] = await Promise.all([
-        intelligentSupplierMatching(e, suppliers),
-        analyzeRouteImpact(e, MockRoutes),
-        estimateFinancialImpactAI(e, suppliers, MockRoutes),
-      ]);
-
-      enriched.push({
-        id: uuidv4(),
-        headline: e.headline,
-        location: e.location,
-        date: e.date,
-        risk_score: Math.round(normalizedScore * 100),
-        risk_level: riskLevel,
-        confidence: aiResult.confidence || 0.7,
-        summary: aiResult.summary || `Supply chain disruption in ${e.location}`,
-        mitigation: aiResult.mitigation || "Monitor situation.",
-        lat: coords.lat,
-        lng: coords.lng,
-
-        affected_suppliers: linkedSuppliers,
-        linked_supplier_ids: suppliers
-          .filter(s => linkedSuppliers.includes(s.supplier_name))
-          .map(s => s.id),
-
-        affected_routes: routes,
-        financial_impact: financialImpact,
-
-        source: aiResult.source || e.source || "Unknown",
-        created_at: new Date().toISOString(),
-        category: e.category || "supply_chain",
-        severity: e.severity || "medium",
-      });
-
-      // ⏳ Delay to respect RPM
-      if (i < translatedEvents.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-    }
+        return {
+          id: uuidv4(),
+          headline: e.headline,
+          location: e.location,
+          date: e.date,
+          risk_score: Math.round(normalizedScore * 100),
+          risk_level: riskLevel,
+          confidence: aiResult.confidence || 0.7,
+          summary: aiResult.summary || `Disruption in ${e.location}`,
+          mitigation: aiResult.mitigation || "Monitor and prepare alternative routes.",
+          lat: coords.lat,
+          lng: coords.lng,
+          affected_suppliers: linkedSuppliers,
+          linked_supplier_ids: suppliers
+            .filter(s => linkedSuppliers.includes(s.supplier_name))
+            .map(s => s.id),
+          affected_routes: routes,
+          financial_impact: financialImpact,
+          source: aiResult.source || e.source || "Unknown",
+          created_at: new Date().toISOString(),
+          category: e.category || "supply_chain",
+          severity: e.severity || "medium",
+        };
+      })
+    );
 
     return enriched.filter(r => r.risk_score >= 20);
   } catch (err) {
