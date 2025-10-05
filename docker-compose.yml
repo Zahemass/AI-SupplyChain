@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: supplychain-backend
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/exports:/app/exports
+    networks:
+      - supplychain-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: supplychain-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      - VITE_API_BASE_URL=http://backend:4000
+    depends_on:
+      - backend
+    networks:
+      - supplychain-net
+    restart: unless-stopped
+
+networks:
+  supplychain-net:
+    driver: bridge

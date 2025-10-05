@@ -1,0 +1,196 @@
+/* Dashboard Layout Styles */
+.dashboard-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+}
+
+.dashboard-header {
+  margin-bottom: 25px;
+  animation: fadeInUp 0.6s ease;
+}
+
+.dashboard {
+  position: relative;
+  display: flex;
+  gap: 20px;
+  width: 100%;
+}
+
+.dashboard-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.dashboard-right {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.supplier-detail-wrapper {
+  margin-bottom: 20px;
+  animation: fadeInUp 0.6s ease;
+}
+
+.card {
+  animation: fadeInUp 0.6s ease;
+}
+
+.weather-widget {
+  animation-delay: 0.2s;
+}
+
+.quick-stats {
+  animation-delay: 0.3s;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.stat-card {
+  padding: 15px;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.weather-alert {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.weather-alert:last-child {
+  margin-bottom: 0;
+}
+
+.weather-alert-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.weather-alert-icon {
+  flex-shrink: 0;
+}
+
+.weather-alert-info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Animation keyframes */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tablet Responsiveness (1024px and below) */
+@media (max-width: 1024px) {
+  .dashboard {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .dashboard-right {
+    width: 100%;
+    flex-shrink: 1;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Mobile Responsiveness (768px and below) */
+@media (max-width: 768px) {
+  .dashboard-header {
+    margin-bottom: 20px;
+  }
+
+  .dashboard {
+    gap: 15px;
+  }
+
+  .dashboard-left {
+    gap: 15px;
+  }
+
+  .dashboard-right {
+    gap: 15px;
+  }
+
+  .supplier-detail-wrapper {
+    margin-bottom: 15px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .stat-card {
+    padding: 12px;
+  }
+
+  .weather-alert {
+    padding: 10px;
+  }
+}
+
+/* Small Mobile (480px and below) */
+@media (max-width: 480px) {
+  .dashboard-header {
+    margin-bottom: 15px;
+  }
+
+  .dashboard {
+    gap: 12px;
+  }
+
+  .dashboard-left {
+    gap: 12px;
+  }
+
+  .dashboard-right {
+    gap: 12px;
+  }
+
+  .supplier-detail-wrapper {
+    margin-bottom: 12px;
+  }
+
+  .stats-grid {
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .stat-card {
+    padding: 10px;
+  }
+
+  .weather-alert {
+    padding: 8px;
+  }
+
+  .weather-alert-content {
+    gap: 8px;
+  }
+}

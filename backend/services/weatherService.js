@@ -1,8 +1,10 @@
 import axios from "axios";
 import dotenv from "dotenv";
+
 dotenv.config();
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
 
+// ✅ Helper to map weather type → impact, severity, affected sectors
 function mapWeatherToImpact(weather) {
   const main = weather.main.toLowerCase();
   const description = weather.description.toLowerCase();
@@ -13,7 +15,7 @@ function mapWeatherToImpact(weather) {
       severity: "high",
       impact: "Flooding risk may disrupt transport and port operations",
       affected_sectors: ["shipping", "textiles", "logistics"],
-      forecast_hours: 24
+      forecast_hours: 24,
     };
   }
   if (main.includes("storm") || description.includes("cyclone")) {
@@ -22,7 +24,7 @@ function mapWeatherToImpact(weather) {
       severity: "severe",
       impact: "Severe storm could halt shipping and factory production",
       affected_sectors: ["shipping", "manufacturing", "energy"],
-      forecast_hours: 48
+      forecast_hours: 48,
     };
   }
   if (main.includes("snow")) {
@@ -31,7 +33,7 @@ function mapWeatherToImpact(weather) {
       severity: "high",
       impact: "Transport and flights may be delayed",
       affected_sectors: ["logistics", "aerospace", "automotive"],
-      forecast_hours: 24
+      forecast_hours: 24,
     };
   }
   if (main.includes("heat")) {
@@ -40,7 +42,7 @@ function mapWeatherToImpact(weather) {
       severity: "medium",
       impact: "Energy demand surge, worker productivity reduced",
       affected_sectors: ["energy", "manufacturing"],
-      forecast_hours: 72
+      forecast_hours: 72,
     };
   }
 
@@ -49,11 +51,12 @@ function mapWeatherToImpact(weather) {
     severity: "low",
     impact: "No major supply chain disruption expected",
     affected_sectors: [],
-    forecast_hours: 12
+    forecast_hours: 12,
   };
 }
 
-export async function fetchWeather(city = "Chennai") {
+// ✅ Fetch weather for one city
+async function fetchCityWeather(city) {
   try {
     const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${WEATHER_API_KEY}`;
     const resp = await axios.get(url);
@@ -62,16 +65,37 @@ export async function fetchWeather(city = "Chennai") {
     const mapped = mapWeatherToImpact(weather);
 
     return {
-      id: `weather_${Date.now()}`,
+      id: `weather_${city.toLowerCase()}_${Date.now()}`,
       date: new Date().toISOString(),
       location: resp.data.name,
       lat: resp.data.coord.lat,
       lng: resp.data.coord.lon,
       ...mapped,
-      description: weather.description
+      description: weather.description,
     };
   } catch (err) {
-    console.error("❌ Weather API error:", err.message);
+    console.error(`❌ Weather API error for ${city}:`, err.message);
     return null;
+  }
+}
+
+// ✅ Fetch weather for multiple cities in parallel
+export async function fetchWeather() {
+  const cities = [
+    "Chennai",         // India
+    "Singapore",       // Singapore
+    "Iceland",         // Germany (optional: major EU logistics hub)
+    "New York",        // USA (for completeness)
+  ];
+
+  try {
+    const results = await Promise.all(cities.map(fetchCityWeather));
+    const validResults = results.filter(Boolean);
+
+    console.log(`✅ Weather data fetched for ${validResults.length}/${cities.length} cities.`);
+    return validResults;
+  } catch (err) {
+    console.error("❌ Error fetching multiple city weather:", err.message);
+    return [];
   }
 }

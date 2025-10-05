@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export default function Navbar() {
+export default function Navbar({ suppliers = [], risks = [], loading, onMenuClick, isMobile }) {
   const [stats, setStats] = useState({
     activeAlerts: 0,
     monitoring: 0,
@@ -8,26 +8,22 @@ export default function Navbar() {
   });
 
   useEffect(() => {
-    // Fetch suppliers and calculate stats
-    fetch("/data/suppliers.json")
-      .then((res) => res.json())
-      .then((data) => {
-        const highRisk = data.filter(s => s.risk === 'HIGH').length;
-        const mediumRisk = data.filter(s => s.risk === 'MEDIUM').length;
-        const totalRisk = highRisk + mediumRisk;
-        
-        let level = 'LOW';
-        if (highRisk > 0) level = 'HIGH';
-        else if (mediumRisk > 0) level = 'MEDIUM';
-        
-        setStats({
-          activeAlerts: totalRisk,
-          monitoring: data.length,
-          riskLevel: level
-        });
-      })
-      .catch(err => console.log(err));
-  }, []);
+    if (loading) return;
+
+    const highRisk = risks.filter(r => r.risk_level === 'HIGH').length;
+    const mediumRisk = risks.filter(r => r.risk_level === 'MEDIUM').length;
+    const totalRisk = highRisk + mediumRisk;
+    
+    let level = 'LOW';
+    if (highRisk > 0) level = 'HIGH';
+    else if (mediumRisk > 0) level = 'MEDIUM';
+    
+    setStats({
+      activeAlerts: totalRisk,
+      monitoring: suppliers.length,
+      riskLevel: level
+    });
+  }, [suppliers, risks, loading]);
 
   const getRiskColor = (level) => {
     if (level === 'HIGH') return '#ef4444';
@@ -37,8 +33,18 @@ export default function Navbar() {
 
   return (
     <div className="navbar">
+      {isMobile && (
+        <button 
+          className="mobile-menu-btn"
+          onClick={onMenuClick}
+          aria-label="Toggle menu"
+        >
+          ☰
+        </button>
+      )}
+      
       <h2>
-        <span>🌍</span>
+        <span className="hide-mobile">🌍</span>
         Supply Chain Risk Radar
       </h2>
       
@@ -55,7 +61,7 @@ export default function Navbar() {
           <span className="stat-label">Active Alerts</span>
         </div>
         
-        <div className="stat-item">
+        <div className="stat-item hide-mobile">
           <span className="stat-value">{stats.monitoring}</span>
           <span className="stat-label">Monitoring</span>
         </div>

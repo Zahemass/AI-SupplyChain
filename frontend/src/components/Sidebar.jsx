@@ -1,7 +1,8 @@
+// Sidebar.jsx
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 
-export default function Sidebar({ suppliers = [], risks = [], loading }) {
+export default function Sidebar({ suppliers = [], risks = [], loading, isOpen, onClose, isMobile }) {
   const location = useLocation();
   const [status, setStatus] = useState({
     message: "Loading system status...",
@@ -10,6 +11,7 @@ export default function Sidebar({ suppliers = [], risks = [], loading }) {
 
   const menuItems = [
     { path: '/', icon: '📊', label: 'Dashboard' },
+    { path: '/benchmark', icon: '⚡', label: 'Benchmark' },
     { path: '/about', icon: 'ℹ️', label: 'About' },
   ];
 
@@ -22,7 +24,6 @@ export default function Sidebar({ suppliers = [], risks = [], loading }) {
       return;
     }
 
-    // Count high/medium risks
     const highRisk = risks.filter(r => r.risk_level === "HIGH").length;
     const mediumRisk = risks.filter(r => r.risk_level === "MEDIUM").length;
 
@@ -44,15 +45,32 @@ export default function Sidebar({ suppliers = [], risks = [], loading }) {
     }
   }, [risks, loading]);
 
+  const handleLinkClick = () => {
+    if (isMobile) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${isMobile ? (isOpen ? 'active' : 'mobile-hidden') : ''}`}>
+      {isMobile && (
+        <button
+          className="sidebar-close-btn"
+          onClick={onClose}
+          aria-label="Close menu"
+        >
+          ✕
+        </button>
+      )}
+
       <h3>Navigation</h3>
       <ul>
         {menuItems.map((item) => (
           <li key={item.path}>
-            <Link 
+            <Link
               to={item.path}
               className={location.pathname === item.path ? 'active' : ''}
+              onClick={handleLinkClick}
             >
               <span style={{ fontSize: '20px' }}>{item.icon}</span>
               <span>{item.label}</span>
@@ -60,11 +78,11 @@ export default function Sidebar({ suppliers = [], risks = [], loading }) {
           </li>
         ))}
       </ul>
-      
-      <div style={{ 
-        position: 'absolute', 
-        bottom: '30px', 
-        left: '25px', 
+
+      <div style={{
+        position: 'absolute',
+        bottom: '30px',
+        left: '25px',
         right: '25px',
         padding: '15px',
         background: 'rgba(6, 182, 212, 0.1)',

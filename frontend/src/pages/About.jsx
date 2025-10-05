@@ -1,8 +1,11 @@
+//About.jsx
+//og
 export default function About() {
   return (
     <div className="about-container">
       <div className="about-header">
         <h1>AI Supply Chain Risk Radar</h1>
+        <h4>Powerd By Cerebras, Meta and Docker</h4>
         <p>
           Predicting disruptions before they happen with real-time AI-powered intelligence
         </p>
@@ -113,24 +116,7 @@ export default function About() {
             </p>
           </div>
           
-          <div style={{
-            padding: '20px',
-            background: 'rgba(16, 185, 129, 0.1)',
-            borderRadius: '12px',
-            border: '1px solid rgba(16, 185, 129, 0.2)'
-          }}>
-            <h4 style={{ 
-              color: '#10b981', 
-              marginBottom: '10px',
-              fontSize: '16px'
-            }}>
-              🌐 Multilingual + Global Coverage
-            </h4>
-            <p style={{ fontSize: '14px', lineHeight: '1.6', color: '#94a3b8' }}>
-              Our LLaMA-powered system processes news and alerts in multiple languages, capturing 
-              local disruptions that English-only systems miss completely.
-            </p>
-          </div>
+          
           
           <div style={{
             padding: '20px',
@@ -175,8 +161,8 @@ export default function About() {
       <div className="about-section">
         <h2>🛠️ Technology Stack</h2>
         <p>
-          Built with cutting-edge technologies including React for the frontend, LLaMA for AI 
-          summarization and risk scoring, Cerebras for accelerated inference, and Docker for 
+          Built with cutting-edge technologies including React for the frontend, Cerebras for AI 
+          summarization and risk scoring,  accelerated inference, and Docker for 
           containerized microservices. Our architecture is designed for scalability, reliability, 
           and ease of deployment.
         </p>
@@ -195,7 +181,7 @@ export default function About() {
           marginBottom: '15px',
           color: '#06b6d4'
         }}>
-          Ready to Transform Your Supply Chain?
+          Connect With US Titan Team
         </h3>
         <p style={{
           fontSize: '16px',
@@ -224,7 +210,7 @@ export default function About() {
           e.target.style.transform = 'translateY(0)';
           e.target.style.boxShadow = '0 4px 20px rgba(6, 182, 212, 0.3)';
         }}>
-          Get Started Today
+          Connect
         </button>
       </div>
     </div>

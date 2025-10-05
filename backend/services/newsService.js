@@ -1,11 +1,10 @@
 // backend/services/newsService.js
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
-import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
 // Fix __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -76,139 +75,99 @@ function relevanceScore(text) {
   return Math.min(score, 1.0);
 }
 
+/**
+ * Main fetch function — currently loads from local JSON
+ */
 export async function fetchNews() {
   try {
-    // 🔄 Toggle this line to use mock data instead of API
-    return await loadMockNews();
+    // ✅ Load from JSON file instead of Excel or API
+    return await loadJsonNews();
 
+    // If you want to re-enable the API later, you can uncomment below:
+    /*
     const apiKey = process.env.NEWS_API_KEY;
     const url = `https://newsapi.org/v2/everything?q=supply+chain&language=en&sortBy=publishedAt&pageSize=20&apiKey=${apiKey}`;
     const response = await axios.get(url);
-
-    const irrelevant = ["bitcoin", "crypto", "stock", "etf"];
-
-    let articles = response.data.articles
-      .map(article => {
-        const text = `${article.title} ${article.description}`.toLowerCase();
-        if (irrelevant.some(word => text.includes(word))) return null;
-
-        const location = extractLocation(article.title, article.description || "");
-        const severity = classifySeverity(article.title + " " + (article.description || ""));
-        const relevance = relevanceScore(article.title + " " + (article.description || ""));
-
-        return {
-          id: uuidv4(),
-          date: article.publishedAt,
-          location,
-          headline: article.title,
-          description: article.description || "No description available",
-          source: article.source?.name || "Unknown",
-          url: article.url,
-          source_language: "en",
-          category: "news",
-          severity,
-          relevance_score: relevance
-        };
-      })
-      .filter(Boolean);
-
-    let filtered = articles;/*.filter(a => a.relevance_score >= 0.5);
-    if (filtered.length === 0) {
-      console.warn("⚠️ No relevant news, falling back to top 2 articles");
-      filtered = articles.slice(0, 2);
-    }*/
-
-    if (filtered.length === 0) {
-      console.warn("⚠️ NewsAPI empty, injecting dummy fallback");
-      filtered = [{
+    */
+  } catch (err) {
+    console.error("❌ fetchNews error:", err.message);
+    return [
+      {
         id: uuidv4(),
         date: new Date().toISOString(),
-        location: "Chennai, India",
-        headline: "Chennai floods halt textile production",
-        description: "Heavy monsoon rains have forced multiple factories to suspend operations.",
-        source: "Dinamalar (Tamil)",
-        url: "https://example.com/chennai-floods",
-        source_language: "ta",
-        category: "weather_impact",
-        severity: "high",
-        relevance_score: 0.9
-      }];
+        location: "Global",
+        headline: "No news available",
+        description: "Failed to load news_feed.json",
+        source: "System",
+        url: "",
+        source_language: "en",
+        category: "system",
+        severity: "low",
+        relevance_score: 0
+      }
+    ];
+  }
+}
+
+/**
+ * 📦 Load mock data from local JSON file
+ */
+async function loadJsonNews() {
+  try {
+    // ✅ Path to your data file
+    const jsonPath = path.join(__dirname, "../data/news_feed.json");
+
+    if (!fs.existsSync(jsonPath)) {
+      throw new Error("news_feed.json not found at " + jsonPath);
     }
 
-    console.log("✅ Final filtered news:", filtered.length, "/", articles.length);
-    return filtered;
-  } catch (err) {
-    console.error("❌ News API error:", err.message);
-    return [{
-      id: uuidv4(),
-      date: new Date().toISOString(),
-      location: "Global",
-      headline: "No news available",
-      description: "News API failed. Showing placeholder event.",
-      source: "System",
-      url: "",
-      source_language: "en",
-      category: "system",
-      severity: "low",
-      relevance_score: 0
-    }];
-  }
-}
+    // Read file content
+    const rawData = fs.readFileSync(jsonPath, "utf-8");
+    const jsonData = JSON.parse(rawData);
 
-// 📦 Load mock data from Excel
-// 📦 Load mock data from Excel (with fresh dynamic dates)
-async function loadMockNews() {
-  try {
-    const workbook = new ExcelJS.Workbook();
-    const mockDataPath = path.join(__dirname, "../../backend/mock_news_data.xlsx");
-    await workbook.xlsx.readFile(mockDataPath);
-    const sheet = workbook.getWorksheet("Mock News");
+    if (!Array.isArray(jsonData)) {
+      throw new Error("Invalid JSON structure: Expected an array");
+    }
 
-    const articles = sheet.getSheetValues()
-      .slice(2)
-      .map(row => {
-        // 🕒 Generate dynamic date: today or yesterday, random time
-        const now = new Date();
-        const base = new Date(now);
-        if (Math.random() < 0.5) base.setDate(now.getDate() - 1); // 50% chance yesterday
-        base.setHours(Math.floor(Math.random() * 24));
-        base.setMinutes(Math.floor(Math.random() * 60));
-        base.setSeconds(Math.floor(Math.random() * 60));
+    // ✅ Refresh timestamps for realism (optional)
+    const now = new Date();
+    const articles = jsonData.map((item) => {
+      const randomOffsetMs = Math.floor(Math.random() * 24 * 60 * 60 * 1000);
+      const randomDate = new Date(now.getTime() - randomOffsetMs);
 
-        const randomISO = base.toISOString();
+      return {
+        id: item.ID || uuidv4(),
+        date: item.Date || randomDate.toISOString(),
+        location: item.Location || extractLocation(item.Headline, item.Description),
+        headline: item.Headline || "Untitled",
+        description: item.Description || "No description available",
+        source: item.Source || "Unknown",
+        url: item.URL || "",
+        source_language: item["Source Language"] || "en",
+        category: item.Category || "general",
+        severity: item.Severity || classifySeverity(item.Description || ""),
+        relevance_score: parseFloat(item["Relevance Score"]) || relevanceScore(item.Description || "")
+      };
+    });
 
-        return {
-          id: row[1],
-          date: randomISO, // ✅ override Excel date
-          location: row[3],
-          headline: row[4],
-          description: row[5],
-          source: row[6],
-          url: row[7],
-          source_language: row[8],
-          category: row[9],
-          severity: row[10],
-          relevance_score: parseFloat(row[11])
-        };
-      });
-
-    console.log("✅ Loaded mock news (with fresh timestamps):", articles.length);
+    console.log(`✅ Loaded ${articles.length} records from news_feed.json`);
     return articles;
   } catch (err) {
-    console.error("❌ Error loading mock data:", err.message);
-    return [{
-      id: uuidv4(),
-      date: new Date().toISOString(),
-      location: "Global",
-      headline: "No mock data available",
-      description: "Excel file failed to load. Showing placeholder event.",
-      source: "System",
-      url: "",
-      source_language: "en",
-      category: "system",
-      severity: "low",
-      relevance_score: 0
-    }];
+    console.error("❌ Error loading JSON data:", err.message);
+    return [
+      {
+        id: uuidv4(),
+        date: new Date().toISOString(),
+        location: "Global",
+        headline: "No JSON data available",
+        description: "Failed to read news_feed.json file.",
+        source: "System",
+        url: "",
+        source_language: "en",
+        category: "system",
+        severity: "low",
+        relevance_score: 0
+      }
+    ];
   }
 }
-
