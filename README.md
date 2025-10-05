@@ -167,3 +167,10 @@ npm start
 ## 📝 License
 
 MIT License - Open source for supply chain resilience worldwide
+
+
+screenshots
+![Live Dashboard](./assets/image1.png)
+![Risk Panel](./assets/image2.png)
+![Feeds and suppliers](./assets/image3.png)
+![Benchmark](./assets/image4.png)
