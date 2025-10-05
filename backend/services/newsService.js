@@ -156,6 +156,7 @@ export async function fetchNews() {
 }
 
 // 📦 Load mock data from Excel
+// 📦 Load mock data from Excel (with fresh dynamic dates)
 async function loadMockNews() {
   try {
     const workbook = new ExcelJS.Workbook();
@@ -165,21 +166,33 @@ async function loadMockNews() {
 
     const articles = sheet.getSheetValues()
       .slice(2)
-      .map(row => ({
-        id: row[1],
-        date: row[2],
-        location: row[3],
-        headline: row[4],
-        description: row[5],
-        source: row[6],
-        url: row[7],
-        source_language: row[8],
-        category: row[9],
-        severity: row[10],
-        relevance_score: parseFloat(row[11])
-      }));
+      .map(row => {
+        // 🕒 Generate dynamic date: today or yesterday, random time
+        const now = new Date();
+        const base = new Date(now);
+        if (Math.random() < 0.5) base.setDate(now.getDate() - 1); // 50% chance yesterday
+        base.setHours(Math.floor(Math.random() * 24));
+        base.setMinutes(Math.floor(Math.random() * 60));
+        base.setSeconds(Math.floor(Math.random() * 60));
 
-    console.log("✅ Loaded mock news:", articles.length);
+        const randomISO = base.toISOString();
+
+        return {
+          id: row[1],
+          date: randomISO, // ✅ override Excel date
+          location: row[3],
+          headline: row[4],
+          description: row[5],
+          source: row[6],
+          url: row[7],
+          source_language: row[8],
+          category: row[9],
+          severity: row[10],
+          relevance_score: parseFloat(row[11])
+        };
+      });
+
+    console.log("✅ Loaded mock news (with fresh timestamps):", articles.length);
     return articles;
   } catch (err) {
     console.error("❌ Error loading mock data:", err.message);
@@ -198,3 +211,4 @@ async function loadMockNews() {
     }];
   }
 }
+
